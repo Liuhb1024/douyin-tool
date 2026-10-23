@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>抖音分享下载</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #12141a;
+      --card: #1c2029;
+      --line: #2d3340;
+      --text: #f4f1ea;
+      --muted: #9aa3b2;
+      --accent: #ff3b5c;
+      --accent-ink: #fff;
+      --ok: #d8f5e4;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif;
+      background:
+        radial-gradient(900px 420px at 10% -10%, rgba(255, 59, 92, 0.18), transparent 60%),
+        var(--bg);
+      color: var(--text);
+    }
+    main {
+      width: min(720px, calc(100% - 32px));
+      margin: 48px auto 64px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    p.lead {
+      margin: 0 0 24px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    form, .result, .error {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+    }
+    form { padding: 16px; }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      resize: vertical;
+      border: 0;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      line-height: 1.55;
+    }
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 8px;
+    }
+    select, button {
+      font: inherit;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #12141a;
+      color: var(--text);
+      padding: 10px 16px;
+    }
+    button {
+      background: var(--accent);
+      border-color: transparent;
+      color: var(--accent-ink);
+      font-weight: 650;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.55; cursor: progress; }
+    .error {
+      margin-top: 16px;
+      padding: 14px 16px;
+      color: #ffd0d8;
+    }
+    .result {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 148px 1fr;
+      gap: 16px;
+      padding: 16px;
+    }
+    .cover {
+      width: 148px;
+      height: 196px;
+      object-fit: cover;
+      border-radius: 12px;
+      background: #0d0f14;
+    }
+    .meta { min-width: 0; }
+    .author { color: var(--muted); margin-bottom: 8px; }
+    .title {
+      font-size: 18px;
+      line-height: 1.45;
+      margin: 0 0 12px;
+      word-break: break-word;
+    }
+    .facts { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+    progress {
+      width: 100%;
+      height: 8px;
+      margin-top: 12px;
+      accent-color: var(--accent);
+    }
+    .status { margin-top: 8px; color: var(--ok); font-size: 14px; }
+    @media (max-width: 640px) {
+      .result { grid-template-columns: 1fr; }
+      .cover { width: 100%; height: 220px; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>抖音分享下载</h1>
+    <p class="lead">复制抖音里的分享文案或链接，粘贴后即可把视频保存到本机。图集会打包成 zip。</p>
+    <form id="form">
+      <textarea id="text" placeholder="例如：7.43 复制打开抖音…… https://v.douyin.com/xxxxxx/" autofocus></textarea>
+      <div class="row">
+        <select id="quality" aria-label="清晰度">
+          <option value="1080p">1080p</option>
+          <option value="720p">720p</option>
+          <option value="540p">540p</option>
+        </select>
+        <button id="submit" type="submit">解析</button>
+      </div>
+    </form>
+    <div id="error" class="error" hidden></div>
+    <section id="result" class="result" hidden>
+      <img id="cover" class="cover" alt="" />
+      <div class="meta">
+        <div id="author" class="author"></div>
+        <h2 id="title" class="title"></h2>
+        <div id="facts" class="facts"></div>
+        <button id="download" type="button">下载</button>
+        <progress id="progress" hidden value="0" max="1"></progress>
+        <div id="status" class="status"></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const form = document.querySelector("#form");
+    const text = document.querySelector("#text");
+    const quality = document.querySelector("#quality");
+    const submit = document.querySelector("#submit");
+    const errorBox = document.querySelector("#error");
+    const result = document.querySelector("#result");
+    const cover = document.querySelector("#cover");
+    const author = document.querySelector("#author");
+    const title = document.querySelector("#title");
+    const facts = document.querySelector("#facts");
+    const download = document.querySelector("#download");
+    const progress = document.querySelector("#progress");
+    const status = document.querySelector("#status");
+    let current = null;
+
+    function showError(message) {
+      errorBox.hidden = !message;
+      errorBox.textContent = message || "";
+    }
+
+    function formatDuration(ms) {
+      if (!ms) return "";
+      const total = Math.round(ms / 1000);
+      const min = Math.floor(total / 60);
+      const sec = String(total % 60).padStart(2, "0");
+      return `${min}:${sec}`;
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      showError("");
+      result.hidden = true;
+      status.textContent = "";
+      submit.disabled = true;
+      submit.textContent = "解析中";
+      try {
+        const response = await fetch("/api/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text.value, quality: quality.value }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "解析失败");
+        current = data;
+        author.textContent = data.author || "未知作者";
+        title.textContent = data.title || "无标题";
+        const bits = [data.is_photo ? `图集 ${data.image_count} 张` : "视频"];
+        const duration = formatDuration(data.duration_ms);
+        if (duration) bits.push(duration);
+        facts.textContent = bits.join(" · ");
+        cover.hidden = !data.cover_path;
+        cover.src = data.cover_path || "";
+        download.textContent = data.is_photo ? "下载图集" : "下载视频";
+        result.hidden = false;
+      } catch (error) {
+        showError(error.message || "解析失败");
+      } finally {
+        submit.disabled = false;
+        submit.textContent = "解析";
+      }
+    });
+
+    text.addEventListener("keydown", (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") form.requestSubmit();
+    });
+
+    download.addEventListener("click", async () => {
+      if (!current) return;
+      showError("");
+      download.disabled = true;
+      progress.hidden = false;
+      progress.removeAttribute("value");
+      status.textContent = "正在下载";
+      try {
+        const response = await fetch(`/api/download/${current.aweme_id}?quality=${encodeURIComponent(quality.value)}`);
+        const type = response.headers.get("content-type") || "";
+        if (!response.ok || type.includes("json")) {
+          const data = await response.json();
+          throw new Error(data.detail || "下载失败");
+        }
+        const total = Number(response.headers.get("content-length") || 0);
+        const reader = response.body.getReader();
+        const chunks = [];
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          if (total) {
+            progress.max = total;
+            progress.value = received;
+            status.textContent = `正在下载 ${Math.round(received / total * 100)}%`;
+          } else {
+            status.textContent = `正在下载 ${(received / 1048576).toFixed(1)} MB`;
+          }
+        }
+        const blob = new Blob(chunks, { type: type || "application/octet-stream" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const matched = /filename\*=UTF-8''([^;]+)/.exec(response.headers.get("content-disposition") || "");
+        link.href = url;
+        link.download = matched ? decodeURIComponent(matched[1]) : (current.is_photo ? "douyin.zip" : "douyin.mp4");
+        link.click();
+        URL.revokeObjectURL(url);
+        status.textContent = "已保存到浏览器的下载目录";
+      } catch (error) {
+        showError(error.message || "下载失败");
+        status.textContent = "";
+      } finally {
+        download.disabled = false;
+        progress.hidden = true;
+      }
+    });
+  </script>
+</body>
+</html>
